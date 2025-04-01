@@ -4,6 +4,7 @@
 ## 참고
 - 필요에 따라 파일을 나뉘어도 됨 (예: client.py와 server.py)
 - import os \n os.chdir(os.path.dirname(os.path.abspath(__file__))) <- 이거 꼭 필요함
+- sports pack
 
 ## 기획
 
