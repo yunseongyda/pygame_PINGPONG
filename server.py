@@ -5,7 +5,7 @@ import pickle
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))  # 현재 파일 디렉토리로 이동
 
-HOST = '0.0.0.0'
+HOST = '10.114.48.135'
 PORT = 9999
 
 clients = []
@@ -64,3 +64,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+    
