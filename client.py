@@ -6,7 +6,7 @@ import pygame
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))  # 현재 파일 디렉토리로 이동
 
-HOST = '10.114.48.135'
+HOST = '192.168.123.101'
 PORT = 9999
 
 game_state = None
