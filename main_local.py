@@ -1,3 +1,4 @@
+# pygame 설치 필요
 import os
 import sys
 import pygame
@@ -25,7 +26,7 @@ def draw_text(text, x, y, color=(255, 255, 255), background_color=None):
 
 # 랜덤 스킬 반환 함수
 def get_random_skill():
-    return random.choice(['spike', 'freeze', 'breaking', 'clone'])
+    return random.choice(['spike', 'freeze', 'breaking', 'clone', 'invisible', 'heavy', 'warp'])
 
 class Settings:
     def __init__(self):
@@ -105,6 +106,17 @@ class SettingsScreen:
             pygame.display.flip()
             clock.tick(self.settings.fps)
 
+class Box:
+    def __init__(self, x, y):
+        self.rect = pygame.Rect(x, y, 30, 30)
+        self.image = pygame.image.load("box.png").convert_alpha()
+
+    def draw(self, screen):
+        screen.blit(self.image, self.rect.topleft)
+
+    def check_collision(self, ball_rect):
+        return self.rect.colliderect(ball_rect)
+
 class PvEGame:
     def __init__(self, settings):
         self.settings = settings
@@ -112,15 +124,38 @@ class PvEGame:
         self.last_box_spawn_time = {"left": self.start_time, "right": self.start_time}
         self.boxes = {"left": [], "right": []}
         self.last_hitter = None
-        self.skills = []
-        self.fake_balls = []
 
-        # 스킬 상태
+        # 스킬 관리
+        self.skills = []
+        self.ball_trail = []
+        # 스파이크
         self.spike_active = False
         self.spike_original_speed = None
+        # 프리즈
         self.freeze_active = False
+        self.breaking_ball_end_time = 0
         self.freeze_end_time = 0
         self.freeze_original_speed = [0, 0]
+        # 변화구
+        self.breaking_ball_active = False
+        # 분신술
+        self.fake_balls = []
+        # 투명
+        self.invisible_active = False
+        self.invisible_end_time = 0
+        # 헤비
+        self.heavy_ball_active = False
+        self.heavy_ball_end_time = 0
+        # 워프
+        self.warp_active = False
+        self.warp_end_time = 0
+        # 지그제그
+        self.zigzag_active = False
+        self.zigzag_end_time = 0
+        # 섬광
+        self.flash_active = False
+        self.flash_end_time = 0
+        self.flash_strong_time = 0
 
     def check_win(self, p, ai):
         if p >= self.settings.target_score or ai >= self.settings.target_score:
@@ -132,7 +167,7 @@ class PvEGame:
     def spawn_box(self, side):
         y = random.randint(0, 570)
         x = random.randint(50, 200) if side == "left" else random.randint(600, 750)
-        return pygame.Rect(x, y, 30, 30)
+        return Box(x, y)
 
     def use_skill(self):
         if not self.skills:
@@ -165,6 +200,8 @@ class PvEGame:
             new_direction = direction + angle_rad
             self.ball_vel[0] = speed * math.cos(new_direction)
             self.ball_vel[1] = speed * math.sin(new_direction)
+            self.breaking_ball_active = True
+            self.breaking_ball_end_time = time.time() + 1.5 # 1.5초 동안 효과 지속
             print(f"[EFFECT] Breaking Ball: angle changed by {angle_deg:.2f} degrees")
 
         elif skill == "clone":
@@ -183,6 +220,86 @@ class PvEGame:
                     "vel": [dx, dy]
                 })
             print("[EFFECT] Clone Ball: Two fake balls created.")
+        
+        elif skill == "invisible":
+            self.invisible_active = True
+            self.invisible_end_time = time.time() + 2
+            print("[EFFECT] Invisible: Ball is now hidden for 2 seconds.")
+
+        elif skill == "heavy":
+            if not self.heavy_ball_active:
+                self.heavy_ball_active = True
+                self.heavy_ball_end_time = time.time() + 2
+                self.heavy_original_speed = self.ball_vel[1]
+                self.ball_vel[1] *= 2 
+                print("[EFFECT] Heavy Ball activated: Y speed increased.")
+        
+        elif skill == "warp":
+            new_x = random.randint(100, 700)
+            new_y = random.randint(100, 500)
+            self.ball_pos = [new_x, new_y]
+            self.warp_active = True
+            self.warp_end_time = time.time() + 1.5
+            print(f"[EFFECT] Warp: Ball teleported to ({new_x}, {new_y})")
+
+        elif skill == "zigzag":
+            self.zigzag_active = True
+            self.zigzag_end_time = time.time() + 4
+            print("[EFFECT] Zigzag: Ball will wobble for 4 seconds.")
+
+        elif skill == "flash":
+            self.flash_active = True
+            self.flash_end_time = time.time() + 1.5
+            self.flash_strong_time = time.time() + 1
+            print("[EFFECT] Flash: Visual interference activated.")
+
+    def draw_ball(self):
+        # 4) invisivle ball 일 때
+        if self.invisible_active:
+            return  # 투명 상태면 공 안 그림
+        
+        # 1) spike일 때: 잔상 그리기
+        if self.spike_active:
+            for i, pos in enumerate(self.ball_trail):
+                alpha = int(255 * (i + 1) / len(self.ball_trail))
+                trail_surface = pygame.Surface((20, 20), pygame.SRCALPHA)
+                pygame.draw.circle(trail_surface, (255, 255, 255, alpha), (10, 10), 10)
+                screen.blit(trail_surface, (int(pos[0]) - 10, int(pos[1]) - 10))
+
+        # 2) freeze일 때: 하늘색으로 표시
+        if self.freeze_active:
+            color = (150, 220, 255)
+        # 7) 지그재그 일 때: 공 색상을 흰색 ~ 노란색 사이로 진동
+        elif self.zigzag_active:
+            t = time.time()
+            brightness = int(200 + 55 * math.sin(t * 20))
+            color = (255, 255, brightness)
+
+        else:
+            color = (255, 255, 255)
+
+        pygame.draw.circle(screen, color, (int(self.ball_pos[0]), int(self.ball_pos[1])), 10)
+
+        # 3) breaking ball일 때: 빨간색 테두리
+        if self.breaking_ball_active:
+            pygame.draw.circle(screen, (255, 100, 100), (int(self.ball_pos[0]), int(self.ball_pos[1])), 12, 1)
+        
+        # 5) warp 했을 때: 하늘색 테두리
+        if self.warp_active:
+            pygame.draw.circle(screen, (150, 200, 255), (int(self.ball_pos[0]), int(self.ball_pos[1])), 12, 1)
+
+        # 6) heavy ball 효과일 때 노란색 테두리
+        if self.heavy_ball_active:
+            pygame.draw.circle(screen, (255, 200, 50), (int(self.ball_pos[0]), int(self.ball_pos[1])), 12, 1)
+
+        # 8) flash 상태일 때: 공 주변에 번쩍이는 점 여러 개
+        if self.flash_active:
+            for _ in range(5):
+                offset_x = random.randint(-10, 10)
+                offset_y = random.randint(-10, 10)
+                color = random.choice([(255, 255, 255), (255, 255, 100), (255, 180, 0)])
+                pygame.draw.circle(screen, color, (int(self.ball_pos[0]) + offset_x, int(self.ball_pos[1]) + offset_y), 4)
+
 
     def run(self):
         score_p = 0
@@ -199,6 +316,13 @@ class PvEGame:
         self.fake_balls = []
         self.spike_active = False
         self.freeze_active = False
+        self.breaking_ball_active = False
+        self.breaking_ball_end_time = 0
+        self.invisible_active = False
+        self.warp_active = False
+        self.heavy_ball_active = False
+        self.zigzag_active = False
+        self.ball_trail = []
         self.last_hitter = None
 
 
@@ -237,11 +361,36 @@ class PvEGame:
                         self.skills.append("clone")
                         print("[CHEAT] clone ball 스킬 획득!")
 
+                    elif event.key == pygame.K_5:
+                        self.skills.append("invisible")
+                        print("[CHEAT] invisible 스킬 획득!")
+
+                    elif event.key == pygame.K_6:
+                        self.skills.append("heavy")
+                        print("[CHEAT] heavy ball 스킬 획득!")
+
+                    elif event.key == pygame.K_7:
+                        self.skills.append("warp")
+                        print("[CHEAT] warp 스킬 획득!")
+
+                    elif event.key == pygame.K_8:
+                        self.skills.append("zigzag")
+                        print("[CHEAT] zigzag 스킬 획득!")
+
+                    elif event.key == pygame.K_9:
+                        self.skills.append("flash")
+                        print("[CHEAT] flash 스킬 획득!")
+
+
             keys = pygame.key.get_pressed()
             if keys[pygame.K_UP]:
                 player_y -= player_speed * dt
             if keys[pygame.K_DOWN]:
                 player_y += player_speed * dt
+
+            self.ball_trail.append(tuple(self.ball_pos))
+            if len(self.ball_trail) > 10:
+                self.ball_trail.pop(0)
 
             player_y = max(0, min(player_y, 500))
             ai_y = ai_move(ai_y, self.ball_pos, speed=300 * dt)
@@ -275,8 +424,56 @@ class PvEGame:
                 self.freeze_active = False
                 print("[EFFECT] Freeze ended: Ball resumed.")
 
+            # breaking ball 적용 중일 때 계속 랜덤하게 공 방향 휘게 하기
+            if self.breaking_ball_active:
+                # 약간의 방향 회전
+                angle_deg = random.uniform(-5, 5)
+                angle_rad = math.radians(angle_deg)
+                speed = math.hypot(self.ball_vel[0], self.ball_vel[1])
+                direction = math.atan2(self.ball_vel[1], self.ball_vel[0])
+                new_direction = direction + angle_rad
+                self.ball_vel[0] = speed * math.cos(new_direction)
+                self.ball_vel[1] = speed * math.sin(new_direction)
+
+                # 3초 지나면 비활성화
+                if time.time() >= self.breaking_ball_end_time:
+                    self.breaking_ball_active = False
+                    print("[EFFECT] Breaking Ball ended.")
+
+            # heavy ball 처리
+            if self.heavy_ball_active and time.time() >= self.heavy_ball_end_time:
+                self.ball_vel[1] = self.heavy_original_speed
+                self.heavy_ball_active = False
+                print("[EFFECT] Heavy Ball ended.")
+
+            # invisible 처리
+            if self.invisible_active and time.time() >= self.invisible_end_time:
+                self.invisible_active = False
+                print("[EFFECT] Invisible ended.")
+
+            # warp 처리
+            if self.warp_active and time.time() >= self.warp_end_time:
+                self.warp_active = False
+            
+            # 지그제그 처리
+            zigzag_offset = 0
+            if self.zigzag_active:
+                zigzag_offset = 80 * math.sin(time.time() * 20)
+                if time.time() >= self.zigzag_end_time:
+                    self.zigzag_active = False
+                    print("[EFFECT] Zigzag ended.")
+
+            # 섬광 처리
+            if self.flash_active and time.time() >= self.flash_end_time:
+                self.flash_active = False
+                print("[EFFECT] Flash ended.")
+
+
             self.ball_pos[0] += self.ball_vel[0] * dt
             self.ball_pos[1] += self.ball_vel[1] * dt
+
+            # zigzag 효과 적용
+            self.ball_pos[0] += zigzag_offset * dt
 
             for fake in self.fake_balls:
                 fake["pos"][0] += fake["vel"][0] * dt
@@ -286,25 +483,43 @@ class PvEGame:
                 self.ball_vel[1] *= -1
                 self.ball_pos[1] = max(0, min(self.ball_pos[1], 590))
 
-            if self.ball_pos[0] <= 0:
+            if self.ball_pos[0] <= 0: # 플레이어가 득점함
                 score_ai += 1
                 self.ball_pos = [400.0, 300.0]
                 self.ball_vel = [300.0, 300.0]
 
-                self.skills = []
                 self.boxes = {"left": [], "right": []}
+                self.skills = []
+                self.fake_balls = []
                 self.spike_active = False
                 self.freeze_active = False
+                self.breaking_ball_active = False
+                self.breaking_ball_end_time = 0
+                self.invisible_active = False
+                self.warp_active = False
+                self.heavy_ball_active = False
+                self.zigzag_active = False
+                self.ball_trail = []
+                self.last_hitter = None
 
-            elif self.ball_pos[0] >= 800:
+            elif self.ball_pos[0] >= 800: # AI가 득점함
                 score_p += 1
                 self.ball_pos = [400.0, 300.0]
                 self.ball_vel = [-300.0, 300.0]
 
-                self.skills = []
                 self.boxes = {"left": [], "right": []}
+                self.skills = []
+                self.fake_balls = []
                 self.spike_active = False
                 self.freeze_active = False
+                self.breaking_ball_active = False
+                self.breaking_ball_end_time = 0
+                self.invisible_active = False
+                self.warp_active = False
+                self.heavy_ball_active = False
+                self.zigzag_active = False
+                self.ball_trail = []
+                self.last_hitter = None
 
             if self.check_win(score_p, score_ai):
                 winner = "Player" if score_p > score_ai else "AI"
@@ -325,7 +540,7 @@ class PvEGame:
             for side in ["left", "right"]:
                 new_boxes = []
                 for box in self.boxes[side]:
-                    if ball_rect.colliderect(box):
+                    if box.check_collision(ball_rect):
                         skill = get_random_skill()
                         print(f"[ITEM] {self.last_hitter} got skill: {skill}")
                         if len(self.skills) < 2:
@@ -335,10 +550,21 @@ class PvEGame:
                 self.boxes[side] = new_boxes
 
             screen.fill((0, 0, 0))
+            # flash 시 화면 전체를 덮는 밝은 레이어
+            if self.flash_active:
+                flash_overlay = pygame.Surface((800, 600), pygame.SRCALPHA)
 
+                if time.time() < self.flash_strong_time:
+                    flash_overlay.fill((255, 255, 255, 250))  # 강한 흰색, 거의 다 덮임
+                else:
+                    flash_overlay.fill((255, 255, 255, 80))   # 잔상 느낌만
+
+                screen.blit(flash_overlay, (0, 0))
+
+            # 상자 그리기
             for side in ["left", "right"]:
                 for box in self.boxes[side]:
-                    screen.blit(box_image, box.topleft)
+                    box.draw(screen)
 
             pygame.draw.line(screen, (255, 255, 255), (400, 80), (400, 600), 5)
             draw_text(f"P: {score_p}", 380, 20, (255, 255, 255), (0, 0, 0))
@@ -347,7 +573,9 @@ class PvEGame:
             for fake in self.fake_balls:
                 pygame.draw.circle(screen, (180, 180, 180), (int(fake["pos"][0]), int(fake["pos"][1])), 10)
 
-            pygame.draw.circle(screen, (255, 255, 255), (int(self.ball_pos[0]), int(self.ball_pos[1])), 10)
+            
+
+            self.draw_ball()
             pygame.draw.rect(screen, (255, 255, 255), (10, int(player_y), 10, 100))
             pygame.draw.rect(screen, (255, 255, 255), (780, int(ai_y), 10, 100))
             pygame.display.flip()
